@@ -266,6 +266,7 @@ export function AudioManager(props: { transcriber: Transcriber }) {
     
     const transcribeAllFiles = async () => {
         setTestProgress(0);
+        setTranscriptionResults([])
         const totalFiles = audioDataList.length;
         const results: Array<{
             filename: string;
@@ -274,8 +275,8 @@ export function AudioManager(props: { transcriber: Transcriber }) {
             latency: number;
         }> = [];
     
-        for (let i = 0; i < 5; i++) {
-        // for (let i = 0; i < totalFiles; i++) {
+        // for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < totalFiles; i++) {
             const audioData = audioDataList[i];
     
             // Start transcription
@@ -312,7 +313,7 @@ export function AudioManager(props: { transcriber: Transcriber }) {
             setTestProgress(((i + 1) / totalFiles) * 100);
             setTranscriptionResults(prev => [...prev, result]);
         }
-    };    
+    };
 
     // When URL changes, download audio
     useEffect(() => {
@@ -405,11 +406,11 @@ export function AudioManager(props: { transcriber: Transcriber }) {
                             isTranscribing={props.transcriber.isBusy}
                         />
 
-                        <SettingsTile
+                        {/* <SettingsTile
                             className='absolute right-4'
                             transcriber={props.transcriber}
                             icon={<SettingsIcon />}
-                        />
+                        /> */}
                     </div>
                     {props.transcriber.progressItems.length > 0 && (
                         <div className='relative z-10 p-4 w-full'>
@@ -428,6 +429,12 @@ export function AudioManager(props: { transcriber: Transcriber }) {
                     )}
                 </>
             )}
+            <SettingsTile
+                className='absolute right-4'
+                transcriber={props.transcriber}
+                icon={<SettingsIcon />}
+            />
+            {`model: ${props.transcriber.model}-${props.transcriber.multilingual ? 'multi':'en'}-${props.transcriber.quantized ? 'quantized':'og'}`}
             {/* Show progress bar */}
             {audioDataList.length > 0 && (
                 <div className='w-full p-4'>
@@ -438,24 +445,43 @@ export function AudioManager(props: { transcriber: Transcriber }) {
                     />
                 </div>
             )}
-            {/* Show download button when processing is complete */}
-            {transcriptionResults.map(data => (
-                <div
-                    key={`${data.filename}-result`}
-                    className='w-full flex flex-row mb-2 bg-white rounded-lg p-4 shadow-xl shadow-black/5 ring-1 ring-slate-700/10'
-                >
-                    <div className='mr-5'>
-                        {data.latency}
-                    </div>
-                    <div>
-                    <p>{`Ground Truth: ${data.groundTruth.toLowerCase()}`}</p>
-                    <p>{`Transcribed:  ${data.transcription.toLowerCase()}`}</p>
-                    </div>
-                </div>
-            ))}
-            {props.transcriber.output?.text}
+            {/* Show processed test cases */}
+            {transcriptionResults.length > 0 && (
+                <CopyButton transcriptionResults={transcriptionResults}/>
+            )}
         </>
     );
+}
+
+function CopyButton(props: {
+    transcriptionResults: {
+        filename: string;
+        groundTruth: string;
+        transcription: string;
+        latency: number;
+    }[]
+}) {
+    const concatenatedResults = props.transcriptionResults.map(data => 
+        `${data.latency}\n${data.groundTruth.toLowerCase().trim()}\n${data.transcription.toLowerCase().trim()}`
+        )
+        .join('\n');
+    return (
+        <div className='w-full mb-4'>
+        <textarea
+            readOnly
+            value={concatenatedResults}
+            className='w-full h-64 p-2 border rounded'
+        />
+        <button
+            onClick={() => {
+            navigator.clipboard.writeText(concatenatedResults);
+            }}
+            className='mt-2 px-4 py-2 bg-blue-500 text-white rounded'
+        >
+            Copy Test Results
+        </button>
+        </div>
+    )
 }
 
 function SettingsTile(props: {

@@ -47,6 +47,7 @@ self.addEventListener("message", async (event) => {
 
     // Do some work...
     // TODO use message data
+    console.log(message.model)
     const [transcript, latency] = await transcribe(
         message.audio,
         message.model,
