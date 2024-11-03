@@ -250,19 +250,19 @@ export function AudioManager(props: { transcriber: Transcriber }) {
         }
     };
 
-    const waitForTranscriptionCompletion = (): Promise<void> => {
-        return new Promise((resolve) => {
-            const checkIfTranscriptionDone = () => {
-                console.log(props.transcriber);
-                if (!props.transcriber.isModelLoading && !props.transcriber.isBusy && props.transcriber.progressItems.length > 0) {
-                    resolve();
-                } else {
-                    setTimeout(checkIfTranscriptionDone, 100); // Check every 100ms
-                }
-            };
-            checkIfTranscriptionDone();
-        });
-    };
+    // const waitForTranscriptionCompletion = (): Promise<void> => {
+    //     return new Promise((resolve) => {
+    //         const checkIfTranscriptionDone = () => {
+    //             console.log(props.transcriber);
+    //             if (!props.transcriber.isModelLoading && !props.transcriber.isBusy && props.transcriber.progressItems.length > 0) {
+    //                 resolve();
+    //             } else {
+    //                 setTimeout(checkIfTranscriptionDone, 100); // Check every 100ms
+    //             }
+    //         };
+    //         checkIfTranscriptionDone();
+    //     });
+    // };
     
     const transcribeAllFiles = async () => {
         setTestProgress(0);
@@ -278,18 +278,11 @@ export function AudioManager(props: { transcriber: Transcriber }) {
         // for (let i = 0; i < 5; i++) {
         for (let i = 0; i < totalFiles; i++) {
             const audioData = audioDataList[i];
-    
-            // Start transcription
-            console.log(props.transcriber.output)
-            // props.transcriber.onInputChange(); // Reset any previous state if necessary
-            console.log("onInputChange", props.transcriber.output)
 
             let result: { filename: string; groundTruth: string; transcription: string; latency: number; };
 
             try {
-                console.log(props.transcriber.output)
                 const transcribedData = await props.transcriber.start(audioData.buffer);
-                console.log(props.transcriber.output)
 
                 // Get the transcription result from props.transcriber.output
                 // const transcribedData = props.transcriber.output;
@@ -434,7 +427,7 @@ export function AudioManager(props: { transcriber: Transcriber }) {
                 transcriber={props.transcriber}
                 icon={<SettingsIcon />}
             />
-            {`model: ${props.transcriber.model}-${props.transcriber.multilingual ? 'multi':'en'}-${props.transcriber.quantized ? 'quantized':'og'}`}
+            {`model: ${props.transcriber.model}-encoder_${props.transcriber.encoderDtype}-decoder_${props.transcriber.decoderDtype}`}
             {/* Show progress bar */}
             {audioDataList.length > 0 && (
                 <div className='w-full p-4'>
@@ -449,6 +442,7 @@ export function AudioManager(props: { transcriber: Transcriber }) {
             {transcriptionResults.length > 0 && (
                 <CopyButton transcriptionResults={transcriptionResults}/>
             )}
+            {/* {performance.memory.usedJSHeapSize} */}
         </>
     );
 }
@@ -535,42 +529,57 @@ function SettingsModal(props: {
         'distil-whisper/distil-medium.en': [402],
         'distil-whisper/distil-large-v2': [767],
     };
+    const encoders = {
+        'fp32': 32.9,
+        'fp16': 16.5,
+        'q4':   9.02,
+        'bnb4':	8.58,
+        'int8':	10.1,
+        'unit8': 10.1,
+    };
+    const decoders = {
+        'fp32': 119,
+        'fp16': 59.6,
+        'q4':   86.7,
+        'bnb4': 86.1,
+        'int8': 30.7,
+        'unit8': 30.7,
+    }
     return (
         <Modal
             show={props.show}
             title={"Settings"}
             content={
                 <>
-                    <label>Select the model to use.</label>
+                    <label>Select the Encoder to use.</label>
                     <select
                         className='mt-1 mb-1 bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500'
-                        defaultValue={props.transcriber.model}
+                        defaultValue={props.transcriber.encoderDtype}
                         onChange={(e) => {
-                            props.transcriber.setModel(e.target.value);
+                            props.transcriber.setEncoderDtype(e.target.value);
                         }}
                     >
-                        {Object.keys(models)
-                            .filter(
-                                (key) =>
-                                    props.transcriber.quantized ||
-                                    // @ts-ignore
-                                    models[key].length == 2,
-                            )
-                            .filter(
-                                (key) => (
-                                    !props.transcriber.multilingual || !key.startsWith('distil-whisper/')
-                                )
-                            )
-                            .map((key) => (
-                                <option key={key} value={key}>{`${key}${
-                                    (props.transcriber.multilingual || key.startsWith('distil-whisper/')) ? "" : ".en"
-                                } (${
-                                    // @ts-ignore
-                                    models[key][
-                                        props.transcriber.quantized ? 0 : 1
-                                    ]
-                                }MB)`}</option>
-                            ))}
+                        {Object.keys(encoders).map((key) => (
+                            <option key={key} value={key}>{`whisper-tiny/encoder_model_${key} (${
+                                // @ts-ignore
+                                encoders[key]
+                            }MB)`}</option>
+                        ))}
+                    </select>
+                    <label>Select the Decoder to use.</label>
+                    <select
+                        className='mt-1 mb-1 bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500'
+                        defaultValue={props.transcriber.decoderDtype}
+                        onChange={(e) => {
+                            props.transcriber.setDecoderDtype(e.target.value);
+                        }}
+                    >
+                        {Object.keys(decoders).map((key) => (
+                            <option key={key} value={key}>{`whisper-tiny/encoder_model_${key} (${
+                                // @ts-ignore
+                                decoders[key]
+                            }MB)`}</option>
+                        ))}
                     </select>
                     <div className='flex justify-between items-center mb-3 px-1'>
                         <div className='flex'>
@@ -588,22 +597,12 @@ function SettingsModal(props: {
                                 Multilingual
                             </label>
                         </div>
-                        <div className='flex'>
-                            <input
-                                id='quantize'
-                                type='checkbox'
-                                checked={props.transcriber.quantized}
-                                onChange={(e) => {
-                                    props.transcriber.setQuantized(
-                                        e.target.checked,
-                                    );
-                                }}
-                            ></input>
-                            <label htmlFor={"quantize"} className='ms-1'>
-                                Quantized
-                            </label>
-                        </div>
                     </div>
+                    {`Total size: ${
+                        // @ts-ignore
+                        encoders[props.transcriber.encoderDtype] + 
+                        // @ts-ignore
+                        decoders[props.transcriber.decoderDtype]} MB`}
                     {props.transcriber.multilingual && (
                         <>
                             <label>Select the source language.</label>

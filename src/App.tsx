@@ -22,7 +22,7 @@ function App() {
                 Made with{" "}
                 <a
                     className='underline'
-                    href='https://github.com/xenova/transformers.js'
+                    href='https://github.com/hugginface/transformers.js'
                 >
                     🤗 Transformers.js
                 </a>

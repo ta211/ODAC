@@ -1,14 +1,16 @@
 /* eslint-disable camelcase */
-import { pipeline, env } from "@xenova/transformers";
+import { pipeline, env } from "@huggingface/transformers";
 
 // Disable local models
-env.allowLocalModels = false;
+// env.allowLocalModels = true;
 
 // Specify a custom location for models (defaults to '/models/').
-// env.localModelPath = '/path/to/models/';
+// env.localModelPath = `${import.meta.env.BASE_URL}`;
 
 // Disable the loading of remote models from the Hugging Face Hub:
 // env.allowRemoteModels = false;
+console.log(env)
+console.log(navigator.deviceMemory);
 
 // Set location of .wasm files. Defaults to use a CDN.
 // env.backends.onnx.wasm.wasmPaths = '/path/to/files/';
@@ -18,24 +20,30 @@ env.allowLocalModels = false;
 class PipelineFactory {
     static task = null;
     static model = null;
-    static quantized = null;
     static instance = null;
+    static encoderDtype = "fp32";
+    static decoderDtype = "fp32";
 
-    constructor(tokenizer, model, quantized) {
+    constructor(tokenizer, model, encoderDtype, decoderDtype) {
         this.tokenizer = tokenizer;
         this.model = model;
-        this.quantized = quantized;
+        this.encoderDtype = encoderDtype;
+        this.decoderDtype = decoderDtype;
     }
 
     static async getInstance(progress_callback = null) {
         if (this.instance === null) {
             this.instance = pipeline(this.task, this.model, {
-                quantized: this.quantized,
                 progress_callback,
+                dtype: {
+                  encoder_model: this.encoderDtype,
+                  decoder_model_merged: this.decoderDtype,
+                },
 
                 // For medium models, we need to load the `no_attentions` revision to avoid running out of memory
-                revision: this.model.includes("/whisper-medium") ? "no_attentions" : "main"
-            });
+                // revision: this.quantized ? "main" : "no_attentions"
+                // revision: this.model.includes("/whisper-medium") ? "no_attentions" : "main"
+            }).catch((error) => console.log(error));
         }
 
         return this.instance;
@@ -44,40 +52,51 @@ class PipelineFactory {
 
 self.addEventListener("message", async (event) => {
     const message = event.data;
-
-    // Do some work...
-    // TODO use message data
-    console.log(message.model)
-    const [transcript, latency] = await transcribe(
+  
+    try {
+      const [transcript, latency] = await transcribe(
         message.audio,
         message.model,
         message.multilingual,
-        message.quantized,
+        message.encoderDtype,
+        message.decoderDtype,
         message.subtask,
         message.language,
-    );
-    if (transcript === null) return;
-
-    // Send the result back to the main thread
-    self.postMessage({
+      );
+  
+      if (transcript === null) return;
+  
+      // Send the result back to the main thread
+      self.postMessage({
         status: "complete",
         task: "automatic-speech-recognition",
         data: transcript,
         latency,
-    });
+      });
+    } catch (error) {
+        console.error('Error during transcription:', error);
+    
+        self.postMessage({
+            status: "error",
+            data: { message: error.message || error.toString(16) },
+        });
+    }
 });
+  
 
 class AutomaticSpeechRecognitionPipelineFactory extends PipelineFactory {
     static task = "automatic-speech-recognition";
     static model = null;
-    static quantized = null;
+    static encoderDtype = "fp32";
+    static decoderDtype = "fp32";
 }
 
 const transcribe = async (
     audio,
     model,
     multilingual,
-    quantized,
+    encoderDtype,
+    decoderDtype,
     subtask,
     language,
 ) => {
@@ -90,10 +109,14 @@ const transcribe = async (
     }
 
     const p = AutomaticSpeechRecognitionPipelineFactory;
-    if (p.model !== modelName || p.quantized !== quantized) {
+    if (p.model !== modelName || 
+        p.encoderDtype !== encoderDtype || 
+        p.decoderDtype != decoderDtype
+    ) {
         // Invalidate model if different
         p.model = modelName;
-        p.quantized = quantized;
+        p.encoderDtype = encoderDtype;
+        p.decoderDtype = decoderDtype;
 
         if (p.instance !== null) {
             (await p.getInstance()).dispose();

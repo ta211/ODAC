@@ -45,8 +45,10 @@ export interface Transcriber {
     setModel: (model: string) => void;
     multilingual: boolean;
     setMultilingual: (model: boolean) => void;
-    quantized: boolean;
-    setQuantized: (model: boolean) => void;
+    encoderDtype: string;
+    setEncoderDtype: (dtype: string) => void;
+    decoderDtype: string;
+    setDecoderDtype: (dtype: string) => void;
     subtask: string;
     setSubtask: (subtask: string) => void;
     language?: string;
@@ -115,6 +117,7 @@ export function useTranscriber(): Transcriber {
 
             case "initiate":
                 // Model file start load: add a new progress item to the list.
+                console.log("initiate", message)
                 setIsModelLoading(true);
                 setProgressItems((prev) => [...prev, message]);
                 break;
@@ -142,8 +145,11 @@ export function useTranscriber(): Transcriber {
 
     const [model, setModel] = useState<string>(Constants.DEFAULT_MODEL);
     const [subtask, setSubtask] = useState<string>(Constants.DEFAULT_SUBTASK);
-    const [quantized, setQuantized] = useState<boolean>(
-        Constants.DEFAULT_QUANTIZED,
+    const [encoderDtype, setEncoderDtype] = useState<string>(
+        Constants.DEFAULT_DTYPE,
+    );
+    const [decoderDtype, setDecoderDtype] = useState<string>(
+        Constants.DEFAULT_DTYPE,
     );
     const [multilingual, setMultilingual] = useState<boolean>(
         Constants.DEFAULT_MULTILINGUAL,
@@ -186,7 +192,8 @@ export function useTranscriber(): Transcriber {
                         audio,
                         model,
                         multilingual,
-                        quantized,
+                        encoderDtype,
+                        decoderDtype,
                         subtask: multilingual ? subtask : null,
                         language:
                             multilingual && language !== "auto" ? language : null,
@@ -196,7 +203,7 @@ export function useTranscriber(): Transcriber {
                 }
             });
         },
-        [webWorker, model, multilingual, quantized, subtask, language],
+        [webWorker, model, multilingual, encoderDtype, decoderDtype, subtask, language],
     );
 
     const transcriber = useMemo(() => {
@@ -211,8 +218,10 @@ export function useTranscriber(): Transcriber {
             setModel,
             multilingual,
             setMultilingual,
-            quantized,
-            setQuantized,
+            encoderDtype,
+            setEncoderDtype,
+            decoderDtype,
+            setDecoderDtype,
             subtask,
             setSubtask,
             language,
@@ -226,7 +235,8 @@ export function useTranscriber(): Transcriber {
         transcript,
         model,
         multilingual,
-        quantized,
+        encoderDtype,
+        decoderDtype,
         subtask,
         language,
     ]);
