@@ -160,8 +160,9 @@ export function AudioManager(props: { transcriber: Transcriber }) {
     const [transcriptionResults, setTranscriptionResults] = useState<
         Array<{
             filename: string;
-            groundTruth: string,
-            transcription: TranscriberData | undefined;
+            groundTruth: string;
+            transcription: string;
+            latency: number;
         }>
     >([]);
 
@@ -269,38 +270,48 @@ export function AudioManager(props: { transcriber: Transcriber }) {
         const results: Array<{
             filename: string;
             groundTruth: string;
-            transcription: TranscriberData;
+            transcription: string;
+            latency: number;
         }> = [];
     
-        for (let i = 0; i < totalFiles; i++) {
+        for (let i = 0; i < 5; i++) {
+        // for (let i = 0; i < totalFiles; i++) {
             const audioData = audioDataList[i];
     
             // Start transcription
-            props.transcriber.onInputChange(); // Reset any previous state if necessary
-            props.transcriber.start(audioData.buffer);
+            console.log(props.transcriber.output)
+            // props.transcriber.onInputChange(); // Reset any previous state if necessary
+            console.log("onInputChange", props.transcriber.output)
 
-            // Wait until transcription is complete
-            await waitForTranscriptionCompletion();            // const transcribedData = { ...props.transcriber. };
-            
-            // Get the transcription result from props.transcriber.output
-            const transcribedData = props.transcriber.output;
-            
-            if (transcribedData) {
-                results.push({
-                    filename: audioData.filename,
-                    groundTruth: audioData.transcription,
-                    transcription: transcribedData,
-                });
-            } else {
-                // Handle case where transcribedData is undefined
-                console.error('Transcription failed for file:', audioData.filename);
+            let result: { filename: string; groundTruth: string; transcription: string; latency: number; };
+
+            try {
+                console.log(props.transcriber.output)
+                const transcribedData = await props.transcriber.start(audioData.buffer);
+                console.log(props.transcriber.output)
+
+                // Get the transcription result from props.transcriber.output
+                // const transcribedData = props.transcriber.output;
+                
+                if (transcribedData) {
+                    result = {
+                        filename: audioData.filename,
+                        groundTruth: audioData.transcription,
+                        transcription: transcribedData.text,
+                        latency: transcribedData.latency,
+                    };
+                } else {
+                    // Handle case where transcribedData is undefined
+                    console.error('Transcription failed for file:', audioData.filename);
+                }
+            } catch (error) {
+                console.error('Error during transcription of file:', audioData.filename, error);
             }
     
             // Update progress
-            console.log(testProgress);
             setTestProgress(((i + 1) / totalFiles) * 100);
+            setTranscriptionResults(prev => [...prev, result]);
         }
-        setTranscriptionResults(results);
     };    
 
     // When URL changes, download audio
@@ -418,7 +429,7 @@ export function AudioManager(props: { transcriber: Transcriber }) {
                 </>
             )}
             {/* Show progress bar */}
-            {testProgress > 0 && (
+            {audioDataList.length > 0 && (
                 <div className='w-full p-4'>
                     <label>Processing files...</label>
                     <Progress
@@ -428,17 +439,21 @@ export function AudioManager(props: { transcriber: Transcriber }) {
                 </div>
             )}
             {/* Show download button when processing is complete */}
-            {transcriptionResults.length === audioDataList.length && (
-                <div className='w-full text-right'>
-                    {/* <button
-                        onClick={exportTranscriptionResults}
-                        className='text-white bg-green-500 hover:bg-green-600 focus:ring-4 focus:ring-green-300 font-medium rounded-lg text-sm px-4 py-2 text-center mr-2 inline-flex items-center'
-                    >
-                        Download Results
-                    </button> */}
-                    {"Transcribed: "}{transcriptionResults.length}
+            {transcriptionResults.map(data => (
+                <div
+                    key={`${data.filename}-result`}
+                    className='w-full flex flex-row mb-2 bg-white rounded-lg p-4 shadow-xl shadow-black/5 ring-1 ring-slate-700/10'
+                >
+                    <div className='mr-5'>
+                        {data.latency}
+                    </div>
+                    <div>
+                    <p>{`Ground Truth: ${data.groundTruth.toLowerCase()}`}</p>
+                    <p>{`Transcribed:  ${data.transcription.toLowerCase()}`}</p>
+                    </div>
                 </div>
-            )}
+            ))}
+            {props.transcriber.output?.text}
         </>
     );
 }
@@ -642,7 +657,7 @@ function TestTile(props:{
     const handleClick = async () => {
         // The path to the test audio files
         // For deployed version
-        const audioFilesPath = '/ODAC/test-clean/'; 
+        const audioFilesPath = `${import.meta.env.BASE_URL}test-clean/`; 
         // For local testing
         // const audioFilesPath = '/public/test-clean/'; 
         const transcriptionsFile = `${audioFilesPath}61-70968.trans.txt`;
@@ -690,7 +705,7 @@ function TestTile(props:{
                 }
             }
                 
-            console.log(audioDataList);
+            console.log("Test Files loaded:", audioDataList);
             
             // After all files are loaded, call the callback
             props.onFilesLoaded(audioDataList);

@@ -4,6 +4,15 @@ import { pipeline, env } from "@xenova/transformers";
 // Disable local models
 env.allowLocalModels = false;
 
+// Specify a custom location for models (defaults to '/models/').
+// env.localModelPath = '/path/to/models/';
+
+// Disable the loading of remote models from the Hugging Face Hub:
+// env.allowRemoteModels = false;
+
+// Set location of .wasm files. Defaults to use a CDN.
+// env.backends.onnx.wasm.wasmPaths = '/path/to/files/';
+
 // Define model factories
 // Ensures only one model is created of each type
 class PipelineFactory {
@@ -38,7 +47,7 @@ self.addEventListener("message", async (event) => {
 
     // Do some work...
     // TODO use message data
-    let transcript = await transcribe(
+    const [transcript, latency] = await transcribe(
         message.audio,
         message.model,
         message.multilingual,
@@ -53,6 +62,7 @@ self.addEventListener("message", async (event) => {
         status: "complete",
         task: "automatic-speech-recognition",
         data: transcript,
+        latency,
     });
 });
 
@@ -149,6 +159,7 @@ const transcribe = async (
     }
 
     // Actually run transcription
+    const startTime = Date.now();
     let output = await transcriber(audio, {
         // Greedy
         top_k: 0,
@@ -177,6 +188,7 @@ const transcribe = async (
         });
         return null;
     });
+    const latency = Date.now() - startTime;
 
-    return output;
+    return [output, latency];
 };

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorker } from "./useWorker";
 import Constants from "../utils/Constants";
 
@@ -24,12 +24,14 @@ interface TranscriberCompleteData {
         text: string;
         chunks: { text: string; timestamp: [number, number | null] }[];
     };
+    latency: number;
 }
 
 export interface TranscriberData {
     isBusy: boolean;
     text: string;
     chunks: { text: string; timestamp: [number, number | null] }[];
+    latency: number;
 }
 
 export interface Transcriber {
@@ -37,7 +39,7 @@ export interface Transcriber {
     isBusy: boolean;
     isModelLoading: boolean;
     progressItems: ProgressItem[];
-    start: (audioData: AudioBuffer | undefined) => void;
+    start: (audioData: AudioBuffer | undefined) => Promise<TranscriberData>;
     output?: TranscriberData;
     model: string;
     setModel: (model: string) => void;
@@ -60,6 +62,9 @@ export function useTranscriber(): Transcriber {
 
     const [progressItems, setProgressItems] = useState<ProgressItem[]>([]);
 
+    // Create a ref to hold the resolve function of the Promise
+    const transcriptionPromiseResolveRef = useRef<(value: TranscriberData | PromiseLike<TranscriberData>) => void>();
+      
     const webWorker = useWorker((event) => {
         const message = event.data;
         // Update the state with the result
@@ -79,24 +84,33 @@ export function useTranscriber(): Transcriber {
                 // Received partial update
                 // console.log("update", message);
                 // eslint-disable-next-line no-case-declarations
-                const updateMessage = message as TranscriberUpdateData;
-                setTranscript({
-                    isBusy: true,
-                    text: updateMessage.data[0],
-                    chunks: updateMessage.data[1].chunks,
-                });
+                // const updateMessage = message as TranscriberUpdateData;
+                // setTranscript({
+                //     isBusy: true,
+                //     text: updateMessage.data[0],
+                //     chunks: updateMessage.data[1].chunks,
+                // });
                 break;
             case "complete":
                 // Received complete transcript
                 // console.log("complete", message);
                 // eslint-disable-next-line no-case-declarations
                 const completeMessage = message as TranscriberCompleteData;
-                setTranscript({
-                    isBusy: false,
-                    text: completeMessage.data.text,
-                    chunks: completeMessage.data.chunks,
-                });
+                const transcribedData: TranscriberData = {
+                  isBusy: false,
+                  text: completeMessage.data.text,
+                  chunks: completeMessage.data.chunks,
+                  latency: message.latency,
+                };
+                setTranscript(transcribedData);
                 setIsBusy(false);
+                console.log("complete", message, transcribedData);
+              
+                // Resolve the Promise with transcribedData
+                if (transcriptionPromiseResolveRef.current) {
+                  transcriptionPromiseResolveRef.current(transcribedData);
+                  transcriptionPromiseResolveRef.current = undefined; // Reset the ref
+                }
                 break;
 
             case "initiate":
@@ -143,37 +157,44 @@ export function useTranscriber(): Transcriber {
     }, []);
 
     const postRequest = useCallback(
-        async (audioData: AudioBuffer | undefined) => {
-            if (audioData) {
-                setTranscript(undefined);
-                setIsBusy(true);
+        (audioData: AudioBuffer | undefined): Promise<TranscriberData> => {
+            return new Promise<TranscriberData>((resolve, reject) => {
+                if (audioData) {
+                    setTranscript(undefined);
+                    setIsBusy(true);
 
-                let audio;
-                if (audioData.numberOfChannels === 2) {
-                    const SCALING_FACTOR = Math.sqrt(2);
+                    // Store the resolve function so we can call it later
+                    transcriptionPromiseResolveRef.current = resolve;
 
-                    let left = audioData.getChannelData(0);
-                    let right = audioData.getChannelData(1);
+                    let audio;
+                    if (audioData.numberOfChannels === 2) {
+                        const SCALING_FACTOR = Math.sqrt(2);
 
-                    audio = new Float32Array(left.length);
-                    for (let i = 0; i < audioData.length; ++i) {
-                        audio[i] = SCALING_FACTOR * (left[i] + right[i]) / 2;
+                        let left = audioData.getChannelData(0);
+                        let right = audioData.getChannelData(1);
+
+                        audio = new Float32Array(left.length);
+                        for (let i = 0; i < audioData.length; ++i) {
+                            audio[i] = SCALING_FACTOR * (left[i] + right[i]) / 2;
+                        }
+                    } else {
+                        // If the audio is not stereo, we can just use the first channel:
+                        audio = audioData.getChannelData(0);
                     }
-                } else {
-                    // If the audio is not stereo, we can just use the first channel:
-                    audio = audioData.getChannelData(0);
-                }
 
-                webWorker.postMessage({
-                    audio,
-                    model,
-                    multilingual,
-                    quantized,
-                    subtask: multilingual ? subtask : null,
-                    language:
-                        multilingual && language !== "auto" ? language : null,
-                });
-            }
+                    webWorker.postMessage({
+                        audio,
+                        model,
+                        multilingual,
+                        quantized,
+                        subtask: multilingual ? subtask : null,
+                        language:
+                            multilingual && language !== "auto" ? language : null,
+                    });
+                } else {
+                    reject(new Error("No audio data provided"));
+                }
+            });
         },
         [webWorker, model, multilingual, quantized, subtask, language],
     );
