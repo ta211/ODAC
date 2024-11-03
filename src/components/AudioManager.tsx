@@ -3,6 +3,7 @@ import axios from "axios";
 import Modal from "./modal/Modal";
 import { UrlInput } from "./modal/UrlInput";
 import AudioPlayer from "./AudioPlayer";
+import { TranscriberData } from "../hooks/useTranscriber";
 import { TranscribeButton } from "./TranscribeButton";
 import Constants from "../utils/Constants";
 import { Transcriber } from "../hooks/useTranscriber";
@@ -127,6 +128,7 @@ export enum AudioSource {
     URL = "URL",
     FILE = "FILE",
     RECORDING = "RECORDING",
+    TEST = "TEST",
 }
 
 export function AudioManager(props: { transcriber: Transcriber }) {
@@ -143,6 +145,27 @@ export function AudioManager(props: { transcriber: Transcriber }) {
     const [audioDownloadUrl, setAudioDownloadUrl] = useState<
         string | undefined
     >(undefined);
+
+    const [audioDataList, setAudioDataList] = useState<
+        Array<{
+            buffer: AudioBuffer;
+            url: string;
+            source: AudioSource;
+            mimeType: string;
+            filename: string;
+            transcription: string;
+        }>
+    >([]);
+
+    const [transcriptionResults, setTranscriptionResults] = useState<
+        Array<{
+            filename: string;
+            groundTruth: string,
+            transcription: TranscriberData | undefined;
+        }>
+    >([]);
+
+    const [testProgress, setTestProgress] = useState<number>(0);
 
     const isAudioLoading = progress !== undefined;
 
@@ -226,6 +249,60 @@ export function AudioManager(props: { transcriber: Transcriber }) {
         }
     };
 
+    const waitForTranscriptionCompletion = (): Promise<void> => {
+        return new Promise((resolve) => {
+            const checkIfTranscriptionDone = () => {
+                console.log(props.transcriber);
+                if (!props.transcriber.isModelLoading && !props.transcriber.isBusy && props.transcriber.progressItems.length > 0) {
+                    resolve();
+                } else {
+                    setTimeout(checkIfTranscriptionDone, 100); // Check every 100ms
+                }
+            };
+            checkIfTranscriptionDone();
+        });
+    };
+    
+    const transcribeAllFiles = async () => {
+        setTestProgress(0);
+        const totalFiles = audioDataList.length;
+        const results: Array<{
+            filename: string;
+            groundTruth: string;
+            transcription: TranscriberData;
+        }> = [];
+    
+        for (let i = 0; i < totalFiles; i++) {
+            const audioData = audioDataList[i];
+    
+            // Start transcription
+            props.transcriber.onInputChange(); // Reset any previous state if necessary
+            props.transcriber.start(audioData.buffer);
+
+            // Wait until transcription is complete
+            await waitForTranscriptionCompletion();            // const transcribedData = { ...props.transcriber. };
+            
+            // Get the transcription result from props.transcriber.output
+            const transcribedData = props.transcriber.output;
+            
+            if (transcribedData) {
+                results.push({
+                    filename: audioData.filename,
+                    groundTruth: audioData.transcription,
+                    transcription: transcribedData,
+                });
+            } else {
+                // Handle case where transcribedData is undefined
+                console.error('Transcription failed for file:', audioData.filename);
+            }
+    
+            // Update progress
+            console.log(testProgress);
+            setTestProgress(((i + 1) / totalFiles) * 100);
+        }
+        setTranscriptionResults(results);
+    };    
+
     // When URL changes, download audio
     useEffect(() => {
         if (audioDownloadUrl) {
@@ -237,10 +314,27 @@ export function AudioManager(props: { transcriber: Transcriber }) {
         }
     }, [audioDownloadUrl]);
 
+    // When test audios are loaded, transcribe them automatically
+    useEffect(() => {
+        if (audioDataList.length > 0) {
+            transcribeAllFiles();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [audioDataList]);
+
     return (
         <>
             <div className='flex flex-col justify-center items-center rounded-lg bg-white shadow-xl shadow-black/5 ring-1 ring-slate-700/10'>
                 <div className='flex flex-row space-x-2 py-2 w-full px-2'>
+                    <TestTile
+                        icon={<FolderIcon />}
+                        text={"Use Test Files"}
+                        onFilesLoaded={(audioDataList) => {
+                            props.transcriber.onInputChange();
+                            setAudioDataList(audioDataList);
+                        }}
+                    /> 
+                    <VerticalBar />
                     <UrlTile
                         icon={<AnchorIcon />}
                         text={"From URL"}
@@ -322,6 +416,28 @@ export function AudioManager(props: { transcriber: Transcriber }) {
                         </div>
                     )}
                 </>
+            )}
+            {/* Show progress bar */}
+            {testProgress > 0 && (
+                <div className='w-full p-4'>
+                    <label>Processing files...</label>
+                    <Progress
+                        text={`Processing ${audioDataList.length} files`}
+                        percentage={testProgress}
+                    />
+                </div>
+            )}
+            {/* Show download button when processing is complete */}
+            {transcriptionResults.length === audioDataList.length && (
+                <div className='w-full text-right'>
+                    {/* <button
+                        onClick={exportTranscriptionResults}
+                        className='text-white bg-green-500 hover:bg-green-600 focus:ring-4 focus:ring-green-300 font-medium rounded-lg text-sm px-4 py-2 text-center mr-2 inline-flex items-center'
+                    >
+                        Download Results
+                    </button> */}
+                    {"Transcribed: "}{transcriptionResults.length}
+                </div>
             )}
         </>
     );
@@ -506,6 +622,89 @@ function ProgressBar(props: { progress: string }) {
                 style={{ width: props.progress }}
             ></div>
         </div>
+    );
+}
+
+function TestTile(props:{
+    icon: JSX.Element;
+    text: string;
+    onFilesLoaded: (
+        audioDataList: Array<{
+            buffer: AudioBuffer;
+            url: string;
+            source: AudioSource;
+            mimeType: string;
+            filename: string;
+            transcription: string;
+        }>,
+    ) => void;
+}) {
+    const handleClick = async () => {
+        // The path to the test audio files
+        // For deployed version
+        const audioFilesPath = '/ODAC/test-clean/'; 
+        // For local testing
+        // const audioFilesPath = '/public/test-clean/'; 
+        const transcriptionsFile = `${audioFilesPath}61-70968.trans.txt`;
+
+        try {
+            // Fetch the transcriptions file
+            const response = await fetch(transcriptionsFile);
+            const text = await response.text();
+
+            // Parse the transcriptions file
+            const lines = text.split('\n').filter((line) => line.trim() !== '');
+            const audioDataList = [];
+        
+            for (const line of lines) {
+                // Each line format: "filename transcription"
+                const firstSpaceIndex = line.indexOf(' ');
+                if (firstSpaceIndex === -1) continue;
+
+                const filename = line.substring(0, firstSpaceIndex);
+                const transcription = line.substring(firstSpaceIndex + 1).trim();
+
+                const audioFilePath = `${audioFilesPath}${filename}.flac`;
+
+                try {
+                    // Fetch the audio file
+                    const audioResponse = await fetch(audioFilePath);
+                    const arrayBuffer = await audioResponse.arrayBuffer();
+
+                    const audioCTX = new AudioContext({
+                        sampleRate: Constants.SAMPLING_RATE,
+                    });
+
+                    const decoded = await audioCTX.decodeAudioData(arrayBuffer);
+
+                    audioDataList.push({
+                        buffer: decoded,
+                        url: audioFilePath,
+                        source: AudioSource.TEST,
+                        mimeType: audioResponse.headers.get('Content-Type') || 'audio/wav',
+                        filename: filename,
+                        transcription: transcription,
+                    });
+                } catch (error) {
+                    console.error(`Error loading file ${audioFilePath}:`, error);
+                }
+            }
+                
+            console.log(audioDataList);
+            
+            // After all files are loaded, call the callback
+            props.onFilesLoaded(audioDataList);
+        } catch (error) {
+            console.error('Error fetching or parsing transcriptions file:', error);
+        }
+    };
+
+    return (
+        <Tile
+            icon={props.icon}
+            text={props.text}
+            onClick={handleClick}
+        />
     );
 }
 
