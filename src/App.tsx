@@ -1,8 +1,9 @@
+import { HashRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import { AudioManager } from "./components/AudioManager";
-import Transcript from "./components/Transcript";
+import ChatbotPage from './components/ChatbotPage';
 import { useTranscriber } from "./hooks/useTranscriber";
 
-function App() {
+function HomePage() {
     const transcriber = useTranscriber();
 
     return (
@@ -16,6 +17,12 @@ function App() {
                 </h2>
                 <AudioManager transcriber={transcriber} />
                 {/* <Transcript transcribedData={transcriber.output} /> */}
+
+                <Link to='/chatbot'>
+                    <button className='mt-5 px-4 py-2 bg-blue-500 text-white rounded'>
+                        Go to Chatbot
+                    </button>
+                </Link>
             </div>
 
             <div className='absolute bottom-4'>
@@ -29,6 +36,17 @@ function App() {
             </div>
         </div>
     );
+}
+
+function App() {
+    return (
+        <Router>
+            <Routes>
+                <Route path='/' element={<HomePage />} />
+                <Route path='/chatbot' element={<ChatbotPage />} />
+            </Routes>
+        </Router>
+    )
 }
 
 export default App;
